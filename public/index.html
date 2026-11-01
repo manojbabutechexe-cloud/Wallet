@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>META Wallet</title>
+<style>
+:root{--bg:#F2F4F8;--p:#fff;--ink:#0E1630;--mute:#5B6479;--line:#E1E5EE;--ac:#0B8F84}
+@media(prefers-color-scheme:dark){:root{--bg:#0A0F20;--p:#121A33;--ink:#EDF0F7;--mute:#9AA3BA;--line:#222C4A;--ac:#2DD4BF}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 40px}
+main{max-width:560px;margin:0 auto;display:grid;gap:16px}
+.c{background:var(--p);border:1px solid var(--line);border-radius:16px;padding:18px;display:grid;gap:10px}
+h1,h2{margin:0}input,button{font:inherit;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%}
+button{background:var(--ac);color:#fff;border:0;font-weight:700;cursor:pointer}.a{word-break:break-all;font-size:14px;color:var(--mute)}
+#msg{color:var(--mute);min-height:1.4em}.hide{display:none}
+</style></head><body><main>
+<h1>META Wallet</h1>
+<div class="c" id="setup">
+ <h2>Your wallet</h2>
+ <input id="pw" type="password" placeholder="Password (min 10 characters)" autocomplete="new-password">
+ <button id="create">Create new wallet</button>
+ <button id="unlock" class="hide">Unlock saved wallet</button>
+</div>
+<div class="c hide" id="main">
+ <div class="a" id="addr"></div>
+ <h2 id="bal">…</h2>
+ <input id="to" placeholder="Recipient address 0x…">
+ <input id="amt" type="number" step="any" placeholder="Amount in META">
+ <button id="send">Send</button>
+ <button id="req">Create payment link</button>
+ <div class="a" id="link"></div>
+</div>
+<div class="c hide" id="trade">
+ <h2>Buy META</h2>
+ <input id="inr" type="number" min="100" max="10000" placeholder="Amount in ₹ (100 to 10,000)">
+ <div class="a" id="get"></div>
+ <button id="buy">Pay with UPI / card</button>
+ <h2>Withdraw to rupees</h2>
+ <input id="wamt" type="number" step="any" placeholder="META to withdraw">
+ <input id="upi" placeholder="Your UPI ID, e.g. name@bank">
+ <button id="wd">Withdraw</button>
+</div>
+<p id="msg" role="status"></p>
+</main>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+<script>
+// ---- EDIT THESE AFTER DEPLOYING THE CONTRACT ----
+const CFG={rpc:"https://ethereum-sepolia-rpc.publicnode.com",token:"0xYOUR_DEPLOYED_META_CONTRACT",treasury:"0xYOUR_TREASURY_ADDRESS",priceInr:0.30,symbol:"META",decimals:8};
+// --------------------------------------------------
+const ABI=["function balanceOf(address) view returns (uint256)","function transfer(address,uint256) returns (bool)"];
+const $=i=>document.getElementById(i),say=t=>$("msg").textContent=t;
+const prov=new ethers.providers.JsonRpcProvider(CFG.rpc);let wallet,tok;
+const KEY="meta_keystore_v1";
+function has(){try{return !!localStorage.getItem(KEY)}catch(e){return false}}
+if(has()){$("unlock").classList.remove("hide");$("create").classList.add("hide")}
+function ready(w){wallet=w.connect(prov);tok=new ethers.Contract(CFG.token,ABI,wallet);
+ $("setup").classList.add("hide");$("trade").classList.remove("hide");$("main").classList.remove("hide");$("addr").textContent=wallet.address;refresh();
+ const q=new URLSearchParams(location.search);if(q.get("to"))$("to").value=q.get("to");if(q.get("amount"))$("amt").value=q.get("amount")}
+async function refresh(){try{const b=await tok.balanceOf(wallet.address);$("bal").textContent=ethers.utils.formatUnits(b,CFG.decimals)+" "+CFG.symbol}catch(e){$("bal").textContent="Balance unavailable";say("Check the contract address and network in the settings block.")}}
+$("create").onclick=async()=>{const p=$("pw").value;if(p.length<10){say("Use a password with at least 10 characters.");return}
+ say("Creating wallet…");const w=ethers.Wallet.createRandom();
+ const phrase=w.mnemonic.phrase;const json=await w.encrypt(p);
+ try{localStorage.setItem(KEY,json)}catch(e){say("This browser blocked storage.");return}
+ alert("WRITE DOWN these 12 words on paper. They are the only way to recover your wallet:\n\n"+phrase);ready(w);say("")};
+$("unlock").onclick=async()=>{say("Unlocking…");try{ready(await ethers.Wallet.fromEncryptedJson(localStorage.getItem(KEY),$("pw").value));say("")}catch(e){say("Wrong password.")}};
+$("send").onclick=async()=>{try{const to=ethers.utils.getAddress($("to").value.trim());const a=ethers.utils.parseUnits($("amt").value||"0",CFG.decimals);
+ if(a.lte(0)){say("Enter an amount above 0.");return}say("Sending…");const tx=await tok.transfer(to,a);say("Sent. Waiting for confirmation…");await tx.wait();say("Confirmed: "+tx.hash);refresh()}catch(e){say("Failed: "+(e.reason||e.message))}};
+$("req").onclick=()=>{$("link").textContent=location.origin+location.pathname+"?to="+wallet.address+"&amount="+($("amt").value||"")};
+
+$("inr").oninput=()=>$("get").textContent="You get about "+((parseFloat($("inr").value)||0)/CFG.priceInr).toLocaleString("en-IN",{maximumFractionDigits:2})+" META";
+$("buy").onclick=async()=>{try{say("Starting payment…");
+ const r=await fetch("/api/createOrder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({inr:$("inr").value,address:wallet.address})});
+ const o=await r.json();if(!r.ok){say(o.error);return}
+ new Razorpay({key:o.keyId,order_id:o.orderId,amount:o.amount,currency:"INR",name:"META Wallet",
+  handler:()=>{say("Payment received. META arrives in your wallet in a minute. Refresh balance.");setTimeout(refresh,30000)}}).open();say("")}catch(e){say("Could not start payment.")}};
+$("wd").onclick=async()=>{try{const a=ethers.utils.parseUnits($("wamt").value||"0",CFG.decimals);const upi=$("upi").value.trim();
+ if(a.lte(0)||!upi){say("Enter an amount and your UPI ID.");return}
+ say("Sending META to the treasury…");const tx=await tok.transfer(CFG.treasury,a);await tx.wait();
+ const sig=await wallet.signMessage("META withdraw "+tx.hash+" to "+upi);
+ const r=await fetch("/api/requestWithdraw",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({txHash:tx.hash,upi:upi,signature:sig})});
+ const o=await r.json();say(r.ok?"Withdrawal of ₹"+o.inr+" is under review. Keep this reference: "+tx.hash:o.error);refresh()}catch(e){say("Failed: "+(e.reason||e.message))}};
+</script></body></html>

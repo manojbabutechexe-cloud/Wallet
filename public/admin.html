@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>META buyers report</title>
+<style>
+:root{--bg:#F2F4F8;--p:#fff;--ink:#0E1630;--mute:#5B6479;--line:#E1E5EE;--ac:#0B8F84;--gold:#C98A00;--ok:#0B8F5A;--warn:#C98A00;--bad:#C0392B;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root{--bg:#0A0F20;--p:#121A33;--ink:#EDF0F7;--mute:#9AA3BA;--line:#222C4A;--ac:#2DD4BF;--gold:#F2B632;--ok:#34D399;--warn:#F2B632;--bad:#F87171}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;line-height:1.45}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 48px;display:grid;gap:16px}
+h1,h2{margin:0}h1{font-size:24px}h2{font-size:17px}
+.c{background:var(--p);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.k b{display:block;font-size:24px}.k span,.m{color:var(--mute);font-size:14px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select,button{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+button{background:var(--ac);color:#fff;border:0;font-weight:700;cursor:pointer}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.tm{display:flex;flex-wrap:wrap;gap:4px;min-height:150px}
+.tm div{background:var(--ac);color:#fff;border-radius:8px;padding:8px;font-size:12px;overflow:hidden;flex-grow:1;min-height:60px;word-break:break-all}
+.tm div:nth-child(3n){background:var(--gold)}.tm div:nth-child(3n+1){background:#4B5FD6}
+details{border-left:2px solid var(--line);margin:6px 0 6px 8px;padding-left:12px}
+summary{cursor:pointer;padding:6px 0;font-weight:600}summary .m{font-weight:400;margin-left:8px}
+.o{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px dashed var(--line);font-size:14px}
+.s{padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid currentColor}
+.Delivered{color:var(--ok)}.Pending{color:var(--warn)}.Attention{color:var(--bad)}
+.a{word-break:break-all}
+</style></head><body><main>
+<h1>Buyers report</h1>
+<p class="m" id="src">Showing sample data.</p>
+<div class="c bar">
+ <input id="tok" type="password" placeholder="Admin token (for live data)" autocomplete="off">
+ <button id="live">Load live data</button>
+ <select id="f"><option value="">All statuses</option><option>Delivered</option><option>Pending</option><option>Attention</option></select>
+ <input id="q" placeholder="Search wallet address">
+</div>
+<div class="kpis" id="k"></div>
+<div class="c"><h2>Holdings map</h2><p class="m">Each box is one buyer. Bigger box means a larger purchase.</p><div class="tm" id="tm"></div></div>
+<div class="c"><h2>Buyer tree</h2><p class="m">Open a product, then a buyer, to see every purchase.</p><div id="tree"></div></div>
+</main>
+<script>
+var SAMPLE=[
+{a:"0x91c4a2e7b1d34f0c8a55e6b7d9021c3f4a8b7e10",p:"META coin",inr:3000,q:10000,s:"Delivered",d:"2026-10-28",r:"pay_demo1"},
+{a:"0x91c4a2e7b1d34f0c8a55e6b7d9021c3f4a8b7e10",p:"META coin",inr:1500,q:5000,s:"Delivered",d:"2026-10-30",r:"pay_demo2"},
+{a:"0x5be0a93f1c2d47e8b6a0d1f39c75e24b8a60c9d2",p:"META coin",inr:9000,q:30000,s:"Delivered",d:"2026-10-29",r:"pay_demo3"},
+{a:"0x0aa7d3c58e19b4f26d70c8e1a35f9b2467d8e5c1",p:"META coin",inr:600,q:2000,s:"Pending",d:"2026-11-01",r:"order_demo4"},
+{a:"0x77f1e9b03a5c4d28e6b19a07c3d5f8e2b4a6c0d9",p:"META coin",inr:2400,q:8000,s:"Attention",d:"2026-10-31",r:"pay_demo5"},
+{a:"0x5be0a93f1c2d47e8b6a0d1f39c75e24b8a60c9d2",p:"Stock: TCS (via broker)",inr:3980,q:1,s:"Delivered",d:"2026-10-27",r:"sample"}];
+var rows=SAMPLE,SM={completed:"Delivered",created:"Pending",paying:"Attention",paid_needs_review:"Attention"};
+function E(t){return String(t).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function N(n){return n.toLocaleString("en-IN",{maximumFractionDigits:2})}
+function short(a){return a.slice(0,8)+"…"+a.slice(-6)}
+function draw(){
+ var f=document.getElementById("f").value,q=document.getElementById("q").value.trim().toLowerCase();
+ var R=rows.filter(function(r){return(!f||r.s===f)&&(!q||r.a.toLowerCase().indexOf(q)>-1)});
+ var buyers={},inr=0,coins=0,pend=0;
+ R.forEach(function(r){buyers[r.a]=(buyers[r.a]||0)+r.inr;if(r.s==="Delivered"){inr+=r.inr;if(r.p==="META coin")coins+=r.q}if(r.s!=="Delivered")pend++});
+ var ks=[["Buyers",Object.keys(buyers).length],["Rupees received","₹"+N(inr)],["META delivered",N(coins)],["Need follow-up",pend]];
+ document.getElementById("k").innerHTML=ks.map(function(k){return'<div class="c k"><b>'+E(k[1])+'</b><span>'+k[0]+'</span></div>'}).join("");
+ var tot=Object.values(buyers).reduce(function(a,b){return a+b},0)||1;
+ document.getElementById("tm").innerHTML=Object.keys(buyers).map(function(a){return'<div style="flex-basis:'+Math.max(14,buyers[a]/tot*100)+'%" title="'+E(a)+'">'+E(short(a))+'<br>₹'+N(buyers[a])+'</div>'}).join("")||'<span class="m">No buyers match.</span>';
+ var P={};R.forEach(function(r){((P[r.p]=P[r.p]||{})[r.a]=P[r.p][r.a]||[]).push(r)});
+ document.getElementById("tree").innerHTML=Object.keys(P).map(function(p){
+  var bs=P[p];return'<details open><summary>'+E(p)+'<span class="m">'+Object.keys(bs).length+' buyers</span></summary>'+Object.keys(bs).map(function(a){
+   var L=bs[a],t=L.reduce(function(s,r){return s+r.inr},0);
+   return'<details><summary>'+E(short(a))+'<span class="m">'+L.length+' purchases, ₹'+N(t)+'</span></summary><div class="a m">'+E(a)+'</div>'+L.map(function(r){
+    return'<div class="o"><span>'+E(r.d)+' · ₹'+N(r.inr)+' · '+N(r.q)+(r.p==="META coin"?' META':' unit')+'</span><span class="m">'+E(r.r)+'</span><span class="s '+r.s+'">'+r.s+'</span></div>'}).join("")+'</details>'}).join("")+'</details>'}).join("")||'<span class="m">Nothing to show.</span>'}
+document.getElementById("f").onchange=draw;document.getElementById("q").oninput=draw;
+document.getElementById("live").onclick=function(){
+ var t=document.getElementById("tok").value,s=document.getElementById("src");
+ fetch("/api/adminReport",{headers:{Authorization:"Bearer "+t}}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){
+  rows=j.orders.map(function(o){return{a:o.address,p:"META coin",inr:o.paise/100,q:Number(o.units)/1e8,s:SM[o.status]||"Pending",d:new Date(o.at).toISOString().slice(0,10),r:o.id}});
+  s.textContent="Showing live data ("+rows.length+" orders).";draw()}).catch(function(){s.textContent="Could not load live data. Check the token and that the site is deployed."})};
+draw();
+</script></body></html>
